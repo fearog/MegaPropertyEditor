@@ -35,7 +35,7 @@
 			// button1
 			// 
 			this.button1.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
-			this.button1.Location = new System.Drawing.Point(0, 459);
+			this.button1.Location = new System.Drawing.Point(0, 345);
 			this.button1.Name = "button1";
 			this.button1.Size = new System.Drawing.Size(59, 24);
 			this.button1.TabIndex = 2;
@@ -65,7 +65,7 @@
 			this.Controls.Add(this.button1);
 			this.Controls.Add(this.m_ctlTreeView);
 			this.Name = "MegaPropertyEditor";
-			this.Size = new System.Drawing.Size(693, 255);
+			this.Size = new System.Drawing.Size(693, 369);
 			this.Load += new System.EventHandler(this.MegaPropertyGrid_Load);
 			this.Paint += new System.Windows.Forms.PaintEventHandler(this.MegaPropertyGrid_Paint);
 			this.ResumeLayout(false);
