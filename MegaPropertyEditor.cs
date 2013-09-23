@@ -46,7 +46,8 @@ namespace MegaPropertyEditor
 				Basic,
 				NullClass,
 				Array,
-				ArrayElement
+				ArrayElement,
+				Custom
 			}
 
 			public PropertyInfo m_property;
@@ -73,6 +74,8 @@ namespace MegaPropertyEditor
 					m_nodeType = NodeTypeNeeded.Array;
 				else if( IsExpandableClassType( m_property.PropertyType ) && value == null )
 					m_nodeType = NodeTypeNeeded.NullClass;
+				else if( typeof( ICustomPropertyEdit ).IsAssignableFrom( m_property.PropertyType ) )
+					m_nodeType = NodeTypeNeeded.Custom;
 				else
 					m_nodeType = NodeTypeNeeded.Basic;
 			}
@@ -161,7 +164,7 @@ namespace MegaPropertyEditor
 			protected PropertyToken m_token;
 
 			private TextBox m_editBox;
-			private Control[] m_editControls;
+			protected Control[] m_editControls;
 
 			public BasicNode( MegaPropertyEditor grid, PropertyToken token, string str )
 				: base( str )
@@ -475,7 +478,30 @@ namespace MegaPropertyEditor
 			}
 		}
 		//--------------------------------------------------------------------
-	
+
+		private class CustomNode : BasicNode
+		{
+			private ICustomPropertyEdit m_custom;
+
+			public CustomNode( MegaPropertyEditor grid, PropertyToken token, string str )
+				: base( grid, token, str )
+			{
+				Text = m_custom.GetEditNodeText( Text );
+			}
+
+			public override Control[] CreateEditControls()
+			{
+				m_custom = m_token.m_property.GetValue( m_token.m_object, null ) as ICustomPropertyEdit;
+				return m_custom.CreateEditControls();
+			}
+
+			public override void PositionEditControls()
+			{
+				m_custom.PositionEditControls( m_editControls, new Rectangle( Bounds.Right, Bounds.Top, m_grid.m_ctlTreeView.Bounds.Width - Bounds.Right, Bounds.Height ) );
+			}
+		}
+		//--------------------------------------------------------------------
+
 		private void CreateListTokens( object arrayObject, PropertyToken arrayToken, List<PropertyToken> tokensFlatList )
 		{
 			// Need to make a brand new list of nodes
@@ -584,6 +610,9 @@ namespace MegaPropertyEditor
 						break;
 					case PropertyToken.NodeTypeNeeded.ArrayElement:
 						newNode = new ArrayElementNode( this, t, "[" + t.m_iElementIndex.ToString() + "]" );
+						break;
+					case PropertyToken.NodeTypeNeeded.Custom:
+						newNode = new CustomNode( this, t, t.m_property.Name );
 						break;
 					}
 					if( newNode != null )

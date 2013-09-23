@@ -7,7 +7,7 @@ using System.Windows.Forms;
 namespace MegaPropertyEditor
 {
 	// Implement this interface to make your type shown in a custom way
-	interface ICustomPropertyEdit
+	public interface ICustomPropertyEdit
 	{
 		// If you want to override the text used for the node
 		string GetEditNodeText( string strDefault );
