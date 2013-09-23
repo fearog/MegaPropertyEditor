@@ -6,9 +6,16 @@ using System.Windows.Forms;
 
 namespace MegaPropertyEditor
 {
-	// Implement this interface to make your type shown in a custom way
+	// Implement this interface to make your type shown in a custom way.
+	// This can also be used to bind a custom editor to a type with AddCustomEditor(),
+	// so that you do not need to modify the class itself. This is useful for patching
+	// complex editing into a closed type or a system type or just for keeping
+	// editor code and client code really really separate. Nice.
 	public interface ICustomPropertyEdit
 	{
+		// This tells the editor what target it is
+		void BindToTarget( object target );
+
 		// If you want to override the text used for the node
 		string GetEditNodeText( string strDefault );
 

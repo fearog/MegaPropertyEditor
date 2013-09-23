@@ -16,8 +16,15 @@ namespace MegaPropertyEditor
 		private Object m_link;
 		private Dictionary< PropertyToken, BasicNode > m_objectNodes;
 		private List<BasicNode> m_usableNodes;
-		private Dictionary<Type, List<Type>> m_typesDerived;
+		private static Dictionary<Type, List<Type>> sm_typesDerived;
+		private static Dictionary<Type, Type> sm_typeCustomEditors;
 		private int m_iMaxTreeWidth;
+		//--------------------------------------------------------------------
+
+		public static void AddCustomEditor( Type forType, Type editorType )
+		{
+			sm_typeCustomEditors[ forType ] = editorType;
+		}
 		//--------------------------------------------------------------------
 
 		public MegaPropertyEditor()
@@ -25,7 +32,10 @@ namespace MegaPropertyEditor
 			InitializeComponent();
 
 			m_objectNodes = new Dictionary<PropertyToken, BasicNode>();
-			m_typesDerived = new Dictionary<Type, List<Type>>();
+			if( sm_typesDerived == null )
+				sm_typesDerived = new Dictionary<Type, List<Type>>();
+			if( sm_typeCustomEditors == null )
+				sm_typeCustomEditors = new Dictionary<Type, Type>();
 			m_usableNodes = new List<BasicNode>();
 		}
 		//--------------------------------------------------------------------
@@ -47,7 +57,8 @@ namespace MegaPropertyEditor
 				NullClass,
 				Array,
 				ArrayElement,
-				Custom
+				Custom,
+				CustomEditor
 			}
 
 			public PropertyInfo m_property;
@@ -76,6 +87,8 @@ namespace MegaPropertyEditor
 					m_nodeType = NodeTypeNeeded.NullClass;
 				else if( typeof( ICustomPropertyEdit ).IsAssignableFrom( m_property.PropertyType ) )
 					m_nodeType = NodeTypeNeeded.Custom;
+				else if( sm_typeCustomEditors.ContainsKey( m_property.PropertyType ) )
+					m_nodeType = NodeTypeNeeded.CustomEditor;
 				else
 					m_nodeType = NodeTypeNeeded.Basic;
 			}
@@ -283,7 +296,7 @@ namespace MegaPropertyEditor
 			public override Control[] CreateEditControls()
 			{
 				Type type = m_token.m_property.PropertyType;
-				m_suitableTypes = m_grid.GetSuitableTypes( type );
+				m_suitableTypes = GetSuitableTypes( type );
 
 				m_addButton = new Button();
 				m_addButton.Text = "Create";
@@ -340,9 +353,9 @@ namespace MegaPropertyEditor
 				return "";
 		}
 
-		private List<Type> GetSuitableTypes( Type type )
+		private static List<Type> GetSuitableTypes( Type type )
 		{
-			if( !m_typesDerived.ContainsKey( type ) )
+			if( !sm_typesDerived.ContainsKey( type ) )
 			{
 				List<Type> suitableTypes = new List<Type>();
 
@@ -363,10 +376,10 @@ namespace MegaPropertyEditor
 					suitableTypes.Add( type );
 				}
 
-				m_typesDerived[ type ] = suitableTypes;
+				sm_typesDerived[ type ] = suitableTypes;
 			}
 			
-			return m_typesDerived[ type ];
+			return sm_typesDerived[ type ];
 		}
 		//--------------------------------------------------------------------
 
@@ -386,7 +399,7 @@ namespace MegaPropertyEditor
 			{
 				m_list = m_token.m_property.GetValue( m_token.m_object, null ) as IList;
 				Type type = m_list.GetType().GetGenericArguments()[ 0 ];
-				m_suitableTypes = m_grid.GetSuitableTypes( type );
+				m_suitableTypes = GetSuitableTypes( type );
 
 				m_addButton = new Button();
 				m_addButton.Text = "Insert";
@@ -446,7 +459,7 @@ namespace MegaPropertyEditor
 				m_list = token.m_property.GetValue( token.m_object, null ) as IList;
 
 				Type type = m_list.GetType().GetGenericArguments()[ 0 ];
-				if( m_grid.GetSuitableTypes( type ).Count != 1 )
+				if( GetSuitableTypes( type ).Count != 1 )
 				{
 					// can be different types, so lets change the name
 					object element = m_list[ token.m_iElementIndex ];
@@ -492,12 +505,39 @@ namespace MegaPropertyEditor
 			public override Control[] CreateEditControls()
 			{
 				m_custom = m_token.m_property.GetValue( m_token.m_object, null ) as ICustomPropertyEdit;
+				m_custom.BindToTarget( m_custom );
 				return m_custom.CreateEditControls();
 			}
 
 			public override void PositionEditControls()
 			{
 				m_custom.PositionEditControls( m_editControls, new Rectangle( Bounds.Right, Bounds.Top, m_grid.m_ctlTreeView.Bounds.Width - Bounds.Right, Bounds.Height ) );
+			}
+		}
+		//--------------------------------------------------------------------
+
+		private class CustomEditorNode : BasicNode
+		{
+			private object m_custom;
+			private ICustomPropertyEdit m_editor;
+
+			public CustomEditorNode( MegaPropertyEditor grid, PropertyToken token, string str )
+				: base( grid, token, str )
+			{
+				Text = m_editor.GetEditNodeText( Text );
+			}
+
+			public override Control[] CreateEditControls()
+			{
+				m_custom = m_token.m_property.GetValue( m_token.m_object, null );
+				m_editor = InstantiateType( sm_typeCustomEditors[ m_token.m_property.PropertyType ] ) as ICustomPropertyEdit;
+				m_editor.BindToTarget( m_custom );
+				return m_editor.CreateEditControls();
+			}
+
+			public override void PositionEditControls()
+			{
+				m_editor.PositionEditControls( m_editControls, new Rectangle( Bounds.Right, Bounds.Top, m_grid.m_ctlTreeView.Bounds.Width - Bounds.Right, Bounds.Height ) );
 			}
 		}
 		//--------------------------------------------------------------------
@@ -613,6 +653,9 @@ namespace MegaPropertyEditor
 						break;
 					case PropertyToken.NodeTypeNeeded.Custom:
 						newNode = new CustomNode( this, t, t.m_property.Name );
+						break;
+					case PropertyToken.NodeTypeNeeded.CustomEditor:
+						newNode = new CustomEditorNode( this, t, t.m_property.Name );
 						break;
 					}
 					if( newNode != null )
