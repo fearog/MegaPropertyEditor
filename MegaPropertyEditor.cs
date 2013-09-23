@@ -131,37 +131,46 @@ namespace MegaPropertyEditor
 			protected PropertyToken m_token;
 
 			private TextBox m_editBox;
+			private Control[] m_editControls;
 
 			public BasicNode( MegaPropertyEditor grid, PropertyToken token, string str )
 				: base( str )
 			{
 				m_grid = grid;
 				m_token = token;
+				m_editControls = CreateEditControls();
+				foreach( Control c in m_editControls )
+					m_grid.m_ctlTreeView.Controls.Add( c );
 			}
 
 			~BasicNode()
 			{
 				HideEditControls();
+				foreach( Control c in m_editControls )
+					m_grid.m_ctlTreeView.Controls.Remove( c );
+
 			}
 
+			public virtual Control[] CreateEditControls()
+			{
+				if( !m_token.m_property.PropertyType.IsPrimitive )
+					return new Control[] { };
+
+				string value = m_token.m_property.GetValue( m_token.m_object, null ).ToString();
+				m_editBox = new TextBox();
+				m_editBox.Text = value;
+				m_editBox.BringToFront();
+				m_editBox.BorderStyle = BorderStyle.FixedSingle;
+				m_editBox.TextChanged += OnTextChanged;
+
+				return new Control[] { m_editBox };
+			}
 
 			public virtual void ShowEditControls()
 			{
-				if( !m_token.m_property.PropertyType.IsPrimitive )
-					return;
-
-				// create and add a button to insert elements
-				if( m_editBox == null )
-				{
-					string value = m_token.m_property.GetValue( m_token.m_object, null ).ToString();
-					m_editBox = new TextBox();
-					m_editBox.Text = value;
-					PositionEditControls();
-					m_editBox.BringToFront();
-					m_editBox.BorderStyle = BorderStyle.FixedSingle;
-					m_editBox.TextChanged += OnTextChanged;
-					m_grid.m_ctlTreeView.Controls.Add( m_editBox );
-				}
+				PositionEditControls();
+				foreach( Control c in m_editControls )
+					c.Show();
 			}
 
 			public virtual void PositionEditControls()
@@ -175,11 +184,8 @@ namespace MegaPropertyEditor
 
 			public virtual void HideEditControls()
 			{
-				if( m_editBox != null )
-				{
-					m_grid.m_ctlTreeView.Controls.Remove( m_editBox );
-					m_editBox = null;
-				}
+				foreach( Control c in m_editControls )
+					c.Hide();
 			}
 
 			public void OnTextChanged( object sender, EventArgs e )
@@ -250,55 +256,38 @@ namespace MegaPropertyEditor
 			public ArrayNode( MegaPropertyEditor grid, PropertyToken token, string str )
 				: base( grid, token, str )
 			{
-				m_list = token.m_property.GetValue( token.m_object, null ) as IList;
-				Type type = m_list.GetType().GetGenericArguments()[ 0 ];
-				m_suitableTypes = m_grid.GetDerivedTypes( type );
 			}
 
-			public override void ShowEditControls()
+			public override Control[] CreateEditControls()
 			{
-				// create and add a button to insert elements
-				if( m_addButton == null )
-				{
-					m_typeSelector = new ComboBox();
-					foreach( Type t in m_suitableTypes )
-						m_typeSelector.Items.Add( t.Name );
-					m_typeSelector.SelectedIndex = 0;
+				m_list = m_token.m_property.GetValue( m_token.m_object, null ) as IList;
+				Type type = m_list.GetType().GetGenericArguments()[ 0 ];
+				m_suitableTypes = m_grid.GetDerivedTypes( type );
 
-					m_addButton = new Button();
-					m_addButton.Text = "Insert";
-					m_addButton.FlatStyle = FlatStyle.System;
+				m_typeSelector = new ComboBox();
+				foreach( Type t in m_suitableTypes )
+					m_typeSelector.Items.Add( t.Name );
+				m_typeSelector.SelectedIndex = 0;
 
-					PositionEditControls();
+				m_addButton = new Button();
+				m_addButton.Text = "Insert";
+				m_addButton.FlatStyle = FlatStyle.System;
 
-					m_typeSelector.BringToFront();
-					m_addButton.BringToFront();
-					m_addButton.Click += OnAddClicked;
-					m_grid.m_ctlTreeView.Controls.Add( m_typeSelector );
-					m_grid.m_ctlTreeView.Controls.Add( m_addButton );
-				}
+				PositionEditControls();
+
+				m_typeSelector.BringToFront();
+				m_addButton.BringToFront();
+				m_addButton.Click += OnAddClicked;
+
+				return new Control[] { m_typeSelector, m_addButton };
 			}
 
 			public override void PositionEditControls()
 			{
-				if( m_typeSelector != null )
-				{
-					m_typeSelector.Location = new System.Drawing.Point( Bounds.Left, Bounds.Top );
-					m_typeSelector.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_typeSelector.Location.X - 50, Bounds.Height );
-					m_addButton.Location = new System.Drawing.Point( m_typeSelector.Right + 8, Bounds.Top );
-					m_addButton.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_addButton.Location.X, Bounds.Height );
-				}
-			}
-
-			public override void HideEditControls()
-			{
-				if( m_typeSelector != null )
-				{
-					m_grid.m_ctlTreeView.Controls.Remove( m_typeSelector );
-					m_grid.m_ctlTreeView.Controls.Remove( m_addButton );
-					m_typeSelector = null;
-					m_addButton = null;
-				}
+				m_typeSelector.Location = new System.Drawing.Point( Bounds.Left, Bounds.Top );
+				m_typeSelector.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_typeSelector.Location.X - 50, Bounds.Height );
+				m_addButton.Location = new System.Drawing.Point( m_typeSelector.Right + 8, Bounds.Top );
+				m_addButton.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_addButton.Location.X, Bounds.Height );
 			}
 
 			public void OnAddClicked( object sender, EventArgs e )
@@ -330,38 +319,21 @@ namespace MegaPropertyEditor
 				}
 			}
 
-			public override void ShowEditControls()
+			public override Control[] CreateEditControls()
 			{
-				// create and add a button to insert elements
-				if( m_eraseButton == null )
-				{
-					m_eraseButton = new Button();
-					m_eraseButton.Text = "X";
-					PositionEditControls();
-					m_eraseButton.BringToFront();
-					m_eraseButton.FlatStyle = FlatStyle.System;
-					
-					m_eraseButton.Click += OnEraseClicked;
-					m_grid.m_ctlTreeView.Controls.Add( m_eraseButton );
-				}
+				m_eraseButton = new Button();
+				m_eraseButton.Text = "X";
+				m_eraseButton.BringToFront();
+				m_eraseButton.FlatStyle = FlatStyle.System;
+				m_eraseButton.Click += OnEraseClicked;
+
+				return new Control[] { m_eraseButton };
 			}
 
 			public override void PositionEditControls()
 			{
-				if( m_eraseButton != null )
-				{
-					m_eraseButton.Location = new System.Drawing.Point( m_grid.m_ctlTreeView.Bounds.Width - 20, Bounds.Top );
-					m_eraseButton.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_eraseButton.Location.X, Bounds.Height );
-				}
-			}
-
-			public override void HideEditControls()
-			{
-				if( m_eraseButton != null )
-				{
-					m_grid.m_ctlTreeView.Controls.Remove( m_eraseButton );
-					m_eraseButton = null;
-				}
+				m_eraseButton.Location = new System.Drawing.Point( m_grid.m_ctlTreeView.Bounds.Width - 20, Bounds.Top );
+				m_eraseButton.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_eraseButton.Location.X, Bounds.Height );
 			}
 
 			public void OnEraseClicked( object sender, EventArgs e )
