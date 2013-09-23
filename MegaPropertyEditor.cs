@@ -55,7 +55,7 @@ namespace MegaPropertyEditor
 			{
 				Basic,
 				NullClass,
-				Array,
+				ArrayInserter,
 				ArrayElement,
 				Custom,
 				CustomEditor
@@ -82,7 +82,7 @@ namespace MegaPropertyEditor
 				if( m_iElementIndex >= 0 )
 					m_nodeType = NodeTypeNeeded.ArrayElement;
 				else if( m_iElementIndex == -2 )
-					m_nodeType = NodeTypeNeeded.Array;
+					m_nodeType = NodeTypeNeeded.ArrayInserter;
 				else if( IsExpandableClassType( m_property.PropertyType ) && value == null )
 					m_nodeType = NodeTypeNeeded.NullClass;
 				else if( typeof( ICustomPropertyEdit ).IsAssignableFrom( m_property.PropertyType ) )
@@ -383,14 +383,14 @@ namespace MegaPropertyEditor
 		}
 		//--------------------------------------------------------------------
 
-		private class ArrayNode : BasicNode
+		private class ArrayInserterNode : BasicNode
 		{
 			private Button m_addButton;
 			private ComboBox m_typeSelector;
 			private IList m_list;
 			private List<Type> m_suitableTypes;
 
-			public ArrayNode( MegaPropertyEditor grid, PropertyToken token, string str )
+			public ArrayInserterNode( MegaPropertyEditor grid, PropertyToken token, string str )
 				: base( grid, token, str )
 			{
 			}
@@ -565,7 +565,7 @@ namespace MegaPropertyEditor
 		}
 		//--------------------------------------------------------------------
 
-		public bool IsTypeAList( Type type )
+		private static bool IsTypeAList( Type type )
 		{
 			var interfaceTest = new Predicate< Type >( i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof( IList<> ) );
 			return interfaceTest( type ) || type.GetInterfaces().Any( i => interfaceTest( i ) );
@@ -645,8 +645,8 @@ namespace MegaPropertyEditor
 					case PropertyToken.NodeTypeNeeded.NullClass:
 						newNode = new NullClassNode( this, t, t.m_property.Name );
 						break;
-					case PropertyToken.NodeTypeNeeded.Array:
-						newNode = new ArrayNode( this, t, "" );
+					case PropertyToken.NodeTypeNeeded.ArrayInserter:
+						newNode = new ArrayInserterNode( this, t, "" );
 						break;
 					case PropertyToken.NodeTypeNeeded.ArrayElement:
 						newNode = new ArrayElementNode( this, t, "[" + t.m_iElementIndex.ToString() + "]" );
@@ -750,37 +750,7 @@ namespace MegaPropertyEditor
 			foreach( TreeNode child in myNode.Nodes )
 				RefreshNodeExtras( child, bParentExpanded && myNode.IsExpanded, ref iMaxWidth );
 		}
-
-		private void BeforeTreeChange( object sender, TreeViewCancelEventArgs e )
-		{
-			RefreshExtras();
-		}
-
-		private void AfterTreeChange( object sender, TreeViewEventArgs e )
-		{
-			RefreshExtras();
-		}
-
-		private void MegaPropertyGrid_Paint( object sender, PaintEventArgs e )
-		{
-		//	FixLayout();
-		}
-
-		private void DrawNode( object sender, DrawTreeNodeEventArgs e )
-		{
-			//e.
-			e.DrawDefault = true;
-		/*	if( e.Node is BasicNode )
-			{
-				( e.Node as BasicNode ).PositionEditControls();
-			}*/
-		}
-
-		private void MegaPropertyGrid_Load( object sender, EventArgs e )
-		{
-			m_iMaxTreeWidth = m_ctlTreeView.Width / 2;
-			FixLayout();
-		}
+		//--------------------------------------------------------------------
 
 		private void FixLayout()
 		{
@@ -796,6 +766,32 @@ namespace MegaPropertyEditor
 			foreach( BasicNode n in m_usableNodes )
 				n.PositionEditControls();
 		}
+		//--------------------------------------------------------------------
+
+		private void BeforeTreeChange( object sender, TreeViewCancelEventArgs e )
+		{
+			RefreshExtras();
+		}
+
+		private void AfterTreeChange( object sender, TreeViewEventArgs e )
+		{
+			RefreshExtras();
+		}
+
+		private void MegaPropertyGrid_Paint( object sender, PaintEventArgs e )
+		{
+		}
+
+		private void DrawNode( object sender, DrawTreeNodeEventArgs e )
+		{
+			e.DrawDefault = true;
+		}
+
+		private void MegaPropertyGrid_Load( object sender, EventArgs e )
+		{
+			m_iMaxTreeWidth = m_ctlTreeView.Width / 2;
+			FixLayout();
+		}
 
 		private void RefreshClicked( object sender, EventArgs e )
 		{
@@ -808,7 +804,7 @@ namespace MegaPropertyEditor
 			this.BeginInvoke( new EmptyDelegate( RefreshItem ) );
 		}
 
-		public void RefreshItem()
+		private void RefreshItem()
 		{
 			SetItem( GetItem() );
 		}
