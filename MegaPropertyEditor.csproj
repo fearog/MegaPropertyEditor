@@ -43,6 +43,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ICustomPropertyEdit.cs" />
     <Compile Include="MegaPropertyEditor.cs">
       <SubType>UserControl</SubType>
     </Compile>

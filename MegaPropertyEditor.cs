@@ -30,13 +30,30 @@ namespace MegaPropertyEditor
 		}
 		//--------------------------------------------------------------------
 
+		private static bool IsExpandableClassType( Type type )
+		{
+			if( type == typeof( string ) )
+				return false;
+
+			return type.IsClass || type.IsInterface;
+		}
+		//--------------------------------------------------------------------
+
 		private class PropertyToken : IEquatable<PropertyToken>
 		{
+			public enum NodeTypeNeeded
+			{
+				Basic,
+				NullClass,
+				Array,
+				ArrayElement
+			}
+
 			public PropertyInfo m_property;
 			public object m_object;
 			public int m_iElementIndex;			// This is only used by elements of arrays, which are kind of "virtual" properties
+			public NodeTypeNeeded m_nodeType;
 			public PropertyToken m_parent;
-
 			public Type m_elementType;
 			
 			// TODO: Add index in parent's list, so we can sort these correctly!
@@ -47,6 +64,17 @@ namespace MegaPropertyEditor
 				m_property = prop;
 				m_object = propOwner;
 				m_iElementIndex = iElementIndex;
+
+				// figure out the node type
+				object value = prop.GetValue( propOwner, null );
+				if( m_iElementIndex >= 0 )
+					m_nodeType = NodeTypeNeeded.ArrayElement;
+				else if( m_iElementIndex == -2 )
+					m_nodeType = NodeTypeNeeded.Array;
+				else if( IsExpandableClassType( m_property.PropertyType ) && value == null )
+					m_nodeType = NodeTypeNeeded.NullClass;
+				else
+					m_nodeType = NodeTypeNeeded.Basic;
 			}
 
 			public override bool Equals( object obj )
@@ -80,7 +108,8 @@ namespace MegaPropertyEditor
 					&& ( m_object == p.m_object ) 
 					&& ( m_iElementIndex == p.m_iElementIndex )
 					&& ( m_parent == p.m_parent )
-					&& ( m_elementType == p.m_elementType );
+					&& ( m_elementType == p.m_elementType )
+					&& ( m_nodeType == p.m_nodeType );
 			}
 
 			public override int GetHashCode()
@@ -92,6 +121,7 @@ namespace MegaPropertyEditor
 					result = ( result * 397 ) ^ m_property.GetHashCode();
 					result = ( result * 397 ) ^ m_object.GetHashCode();
 					result = ( result * 397 ) ^ m_iElementIndex.GetHashCode();
+					result = ( result * 397 ) ^ m_nodeType.GetHashCode();
 					if( m_parent != null )
 						result = ( result * 397 ) ^ m_parent.GetHashCode();
 					if( m_elementType != null )
@@ -140,7 +170,11 @@ namespace MegaPropertyEditor
 				m_token = token;
 				m_editControls = CreateEditControls();
 				foreach( Control c in m_editControls )
+				{
+					c.BringToFront();
+					c.Hide();
 					m_grid.m_ctlTreeView.Controls.Add( c );
+				}
 			}
 
 			~BasicNode()
@@ -153,15 +187,20 @@ namespace MegaPropertyEditor
 
 			public virtual Control[] CreateEditControls()
 			{
-				if( !m_token.m_property.PropertyType.IsPrimitive )
+				if( !m_token.m_property.PropertyType.IsPrimitive && m_token.m_property.PropertyType != typeof( string ) )
 					return new Control[] { };
 
-				string value = m_token.m_property.GetValue( m_token.m_object, null ).ToString();
+				object value = m_token.m_property.GetValue( m_token.m_object, null );
+				string strValue = "";
+				if( value != null )
+					strValue = value.ToString();
 				m_editBox = new TextBox();
-				m_editBox.Text = value;
-				m_editBox.BringToFront();
+				m_editBox.Text = strValue;
 				m_editBox.BorderStyle = BorderStyle.FixedSingle;
 				m_editBox.TextChanged += OnTextChanged;
+				m_editBox.KeyDown += OnKeyDown;
+				m_editBox.LostFocus += ( a, b ) => StoreValue();
+				m_editBox.Leave += ( a, b ) => StoreValue();
 
 				return new Control[] { m_editBox };
 			}
@@ -192,8 +231,29 @@ namespace MegaPropertyEditor
 			{
 				try
 				{
-					m_token.m_property.SetValue( m_token.m_object, Convert.ChangeType( m_editBox.Text, m_token.m_property.PropertyType ), null );
+					// test conversion
+					Convert.ChangeType( m_editBox.Text, m_token.m_property.PropertyType );
+					m_editBox.BackColor = Color.LightGray;
+				}
+				catch( System.FormatException )
+				{
+					// highlight red if the value is no good
+					m_editBox.BackColor = Color.IndianRed;
+				}
+			}
 
+			private void OnKeyDown( object sender, System.Windows.Forms.KeyEventArgs e )
+			{
+				if( e.KeyCode == Keys.Enter )
+					StoreValue();
+			}
+
+			private void StoreValue()
+			{
+				try
+				{
+					m_token.m_property.SetValue( m_token.m_object, Convert.ChangeType( m_editBox.Text, m_token.m_property.PropertyType ), null );
+					m_editBox.Text = m_token.m_property.GetValue( m_token.m_object, null ).ToString();
 					m_editBox.BackColor = Color.White;
 				}
 				catch( System.FormatException )
@@ -204,25 +264,86 @@ namespace MegaPropertyEditor
 			}
 		}
 		//--------------------------------------------------------------------
-/*
-		private class ClassNode : BasicNode
-		{
 
-			public ClassNode( MegaPropertyEditor grid, PropertyToken token, string str )
-				: base( grid, token, str )
+		// This node represents an empty class reference that the user may want to fill
+		private class NullClassNode : BasicNode
+		{
+			private Button m_addButton;
+			private ComboBox m_typeSelector;
+			private List<Type> m_suitableTypes;
+
+			public NullClassNode( MegaPropertyEditor grid, PropertyToken token, string str )
+				: base( grid, token, str + " - null")
 			{
+			}
+
+			public override Control[] CreateEditControls()
+			{
+				Type type = m_token.m_property.PropertyType;
+				m_suitableTypes = m_grid.GetSuitableTypes( type );
+
+				m_addButton = new Button();
+				m_addButton.Text = "Create";
+				m_addButton.FlatStyle = FlatStyle.System;
+				m_addButton.Click += OnAddClicked;
+
+				if( m_suitableTypes.Count > 1 )
+				{
+					m_typeSelector = new ComboBox();
+					foreach( Type t in m_suitableTypes )
+						m_typeSelector.Items.Add( t.Name );
+					m_typeSelector.SelectedIndex = 0;
+					return new Control[] { m_typeSelector, m_addButton };
+				}
+
+				return new Control[] { m_addButton };
+			}
+
+			public override void PositionEditControls()
+			{
+				if( m_typeSelector != null )
+				{
+					m_typeSelector.Location = new System.Drawing.Point( Bounds.Right, Bounds.Top );
+					m_typeSelector.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_typeSelector.Location.X - 50, Bounds.Height );
+					m_addButton.Location = new System.Drawing.Point( m_typeSelector.Right + 8, Bounds.Top );
+					m_addButton.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_addButton.Location.X, Bounds.Height );
+				}
+				else
+				{
+					m_addButton.Location = new System.Drawing.Point( Bounds.Right, Bounds.Top );
+					m_addButton.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_addButton.Location.X, Bounds.Height );
+				}
+			}
+
+			public void OnAddClicked( object sender, EventArgs e )
+			{
+				// find and remove ourselves from the list
+				object newObject;
+				if( m_typeSelector != null )
+					newObject = InstantiateType( m_suitableTypes[ m_typeSelector.SelectedIndex ] );
+				else
+					newObject = InstantiateType( m_suitableTypes[ 0 ] );
+				m_token.m_property.SetValue( m_token.m_object, newObject, null );
+				m_grid.Dirty();
 			}
 		}
 		//--------------------------------------------------------------------
-		*/
 
-		private List<Type> GetDerivedTypes( Type type )
+		private static object InstantiateType( Type type )
+		{
+			if( type != typeof( String ) )
+				return System.Activator.CreateInstance( type );
+			else
+				return "";
+		}
+
+		private List<Type> GetSuitableTypes( Type type )
 		{
 			if( !m_typesDerived.ContainsKey( type ) )
 			{
 				List<Type> suitableTypes = new List<Type>();
 
-				if( !type.IsPrimitive )
+				if( !type.IsValueType && type != typeof( String ) )
 				{
 					// Discover any and all types that may be used here
 					foreach( Assembly a in AppDomain.CurrentDomain.GetAssemblies() )
@@ -262,38 +383,49 @@ namespace MegaPropertyEditor
 			{
 				m_list = m_token.m_property.GetValue( m_token.m_object, null ) as IList;
 				Type type = m_list.GetType().GetGenericArguments()[ 0 ];
-				m_suitableTypes = m_grid.GetDerivedTypes( type );
-
-				m_typeSelector = new ComboBox();
-				foreach( Type t in m_suitableTypes )
-					m_typeSelector.Items.Add( t.Name );
-				m_typeSelector.SelectedIndex = 0;
+				m_suitableTypes = m_grid.GetSuitableTypes( type );
 
 				m_addButton = new Button();
 				m_addButton.Text = "Insert";
 				m_addButton.FlatStyle = FlatStyle.System;
-
-				PositionEditControls();
-
-				m_typeSelector.BringToFront();
-				m_addButton.BringToFront();
 				m_addButton.Click += OnAddClicked;
 
-				return new Control[] { m_typeSelector, m_addButton };
+				if( m_suitableTypes.Count > 1 )
+				{
+					m_typeSelector = new ComboBox();
+					foreach( Type t in m_suitableTypes )
+						m_typeSelector.Items.Add( t.Name );
+					m_typeSelector.SelectedIndex = 0;
+					return new Control[] { m_typeSelector, m_addButton };
+				}
+
+				return new Control[] { m_addButton };
 			}
 
 			public override void PositionEditControls()
 			{
-				m_typeSelector.Location = new System.Drawing.Point( Bounds.Left, Bounds.Top );
-				m_typeSelector.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_typeSelector.Location.X - 50, Bounds.Height );
-				m_addButton.Location = new System.Drawing.Point( m_typeSelector.Right + 8, Bounds.Top );
-				m_addButton.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_addButton.Location.X, Bounds.Height );
+				if( m_typeSelector != null )
+				{
+					m_typeSelector.Location = new System.Drawing.Point( Bounds.Left, Bounds.Top );
+					m_typeSelector.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_typeSelector.Location.X - 50, Bounds.Height );
+					m_addButton.Location = new System.Drawing.Point( m_typeSelector.Right + 8, Bounds.Top );
+					m_addButton.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_addButton.Location.X, Bounds.Height );
+				}
+				else
+				{
+					m_addButton.Location = new System.Drawing.Point( Bounds.Left, Bounds.Top );
+					m_addButton.Size = new System.Drawing.Size( m_grid.m_ctlTreeView.Bounds.Width - m_addButton.Location.X, Bounds.Height );
+				}
 			}
 
 			public void OnAddClicked( object sender, EventArgs e )
 			{
 				// find and remove ourselves from the list
-				object newObject = System.Activator.CreateInstance( m_suitableTypes[ m_typeSelector.SelectedIndex ] );
+				object newObject;
+				if( m_typeSelector != null )
+					newObject = InstantiateType( m_suitableTypes[ m_typeSelector.SelectedIndex ] );
+				else
+					newObject = InstantiateType( m_suitableTypes[ 0 ] );
 				m_list.Add( newObject );
 				m_grid.Dirty();
 			}
@@ -311,7 +443,7 @@ namespace MegaPropertyEditor
 				m_list = token.m_property.GetValue( token.m_object, null ) as IList;
 
 				Type type = m_list.GetType().GetGenericArguments()[ 0 ];
-				if( m_grid.GetDerivedTypes( type ).Count != 1 )
+				if( m_grid.GetSuitableTypes( type ).Count != 1 )
 				{
 					// can be different types, so lets change the name
 					object element = m_list[ token.m_iElementIndex ];
@@ -323,7 +455,6 @@ namespace MegaPropertyEditor
 			{
 				m_eraseButton = new Button();
 				m_eraseButton.Text = "X";
-				m_eraseButton.BringToFront();
 				m_eraseButton.FlatStyle = FlatStyle.System;
 				m_eraseButton.Click += OnEraseClicked;
 
@@ -393,7 +524,7 @@ namespace MegaPropertyEditor
 						if( value != null )
 							CreateListTokens( value, token, tokensFlatList );
 					}
-					else if( prop.PropertyType.IsClass )
+					else if( IsExpandableClassType( prop.PropertyType ) )
 					{
 						if( value != null )
 							BuildPropertyTokenTree( value, token, tokensFlatList );
@@ -439,24 +570,24 @@ namespace MegaPropertyEditor
 				// create all of the nodes that should exist
 				foreach( PropertyToken t in tokensToAdd )
 				{
-					if( t.m_iElementIndex >= 0 )
+					BasicNode newNode = null;
+					switch( t.m_nodeType )
 					{
-						// Array element
-						ArrayElementNode newNode = new ArrayElementNode( this, t, "[" + t.m_iElementIndex.ToString() + "]" );
-						m_objectNodes[ t ] = newNode;
+					case PropertyToken.NodeTypeNeeded.Basic:
+						newNode = new BasicNode( this, t, t.m_property.Name );
+						break;
+					case PropertyToken.NodeTypeNeeded.NullClass:
+						newNode = new NullClassNode( this, t, t.m_property.Name );
+						break;
+					case PropertyToken.NodeTypeNeeded.Array:
+						newNode = new ArrayNode( this, t, "" );
+						break;
+					case PropertyToken.NodeTypeNeeded.ArrayElement:
+						newNode = new ArrayElementNode( this, t, "[" + t.m_iElementIndex.ToString() + "]" );
+						break;
 					}
-					else if( t.m_iElementIndex == -2 )
-					{
-						// Array adder node
-						ArrayNode newNode = new ArrayNode( this, t, "" );
+					if( newNode != null )
 						m_objectNodes[ t ] = newNode;
-					}
-					else
-					{
-						// Normal
-						BasicNode newNode = new BasicNode( this, t, t.m_property.Name );
-						m_objectNodes[ t ] = newNode;
-					}
 				}
 
 				// make sure children array is up to date
